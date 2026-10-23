@@ -1,0 +1,484 @@
+<div style="background:#0b1120; min-height:100%; padding: 4px 0;">
+<div id="app" style="font-family: system-ui, -apple-system, sans-serif; max-width: 760px; margin: 0 auto; padding: 20px 16px; color: #e2e8f0;"></div>
+</div>
+
+<script>
+const QUESTIONS = [
+  // ===== SQL Basics & Syntax =====
+  { topic: "Basics & Syntax", difficulty: "easy", code: `Are SQL keywords like SELECT and FROM case-sensitive?\n\nSELECT * FROM Customers;\nselect * from customers;`, answer: "No — keywords are not case-sensitive, so both statements are valid. (Table and column name case-sensitivity depends on the database system.)", explain: "Convention is to write keywords in UPPERCASE for readability, but the engine doesn't care. Identifier case rules vary: MySQL on Linux treats table names as case-sensitive, SQL Server usually doesn't." },
+  { topic: "Basics & Syntax", difficulty: "easy", code: `What is the semicolon at the end of a SQL statement for?`, answer: "It separates SQL statements, so you can run more than one in the same call to the server.", explain: "Some database systems require it, others don't, but using it is the safe habit." },
+  { topic: "Basics & Syntax", difficulty: "medium", code: `SELECT Name -- , Age\nFROM Users /* WHERE Age > 30 */;\n\nWhat query does the database actually run?`, answer: "SELECT Name FROM Users;", explain: "-- comments out the rest of a single line. /* ... */ comments out everything between, across as many lines as you like." },
+  { topic: "Basics & Syntax", difficulty: "medium", code: `SELECT 2 + 3 * 4;\nSELECT 10 <> 10;\n\nWhat does each return?`, answer: "14\nFalse (0) — <> means 'not equal', and 10 is equal to 10.", explain: "Multiplication binds tighter than addition, same as maths. <> is the standard not-equal operator; most systems also accept !=." },
+  { topic: "Basics & Syntax", difficulty: "hard", code: `What's the difference between SQL and something like MySQL, PostgreSQL, or SQL Server?`, answer: "SQL is the query language (and standard). MySQL, PostgreSQL and SQL Server are database systems that implement it, each with their own dialect and extras.", explain: "That's why things like TOP vs LIMIT, GETDATE() vs NOW(), or IDENTITY vs AUTO_INCREMENT differ between systems while core SELECT/WHERE/JOIN stay the same." },
+
+  // ===== SELECT & DISTINCT =====
+  { topic: "SELECT & DISTINCT", difficulty: "easy", code: `Customers\nName | Country\nAnn  | UK\nBob  | US\nCat  | UK\nDan  | US\nEve  | FR\n\nSELECT DISTINCT Country FROM Customers;\n\nHow many rows come back?`, answer: "3 rows: UK, US, FR", explain: "DISTINCT removes duplicate rows from the result, so each country appears once." },
+  { topic: "SELECT & DISTINCT", difficulty: "medium", code: `Same Customers table.\n\nSELECT COUNT(DISTINCT Country) FROM Customers;`, answer: "3", explain: "COUNT(DISTINCT col) counts the number of unique non-NULL values in that column." },
+  { topic: "SELECT & DISTINCT", difficulty: "hard", code: `Same Customers table.\n\nSELECT DISTINCT Country, Name FROM Customers;\n\nHow many rows come back?`, answer: "5 rows", explain: "DISTINCT applies to the whole combination of selected columns, not just the first one. Every (Country, Name) pair is unique here, so nothing is removed." },
+  { topic: "SELECT & DISTINCT", difficulty: "medium", code: `Why is SELECT * often discouraged in production queries?`, answer: "It returns every column, including ones you don't need, which wastes bandwidth and memory, and it can break code when columns are added, removed, or reordered.", explain: "Naming the columns you need also lets the database use covering indexes and makes the query's intent clear." },
+
+  // ===== WHERE, AND, OR, NOT =====
+  { topic: "WHERE / AND / OR / NOT", difficulty: "easy", code: `Orders\nID | Product | Price\n1  | Pen     | 2\n2  | Book    | 12\n3  | Bag     | 30\n4  | Pen     | 3\n\nSELECT ID FROM Orders WHERE Price > 5 AND Product = 'Pen';`, answer: "No rows (empty result)", explain: "AND needs both conditions true. The Pens cost 2 and 3, so none of them are above 5." },
+  { topic: "WHERE / AND / OR / NOT", difficulty: "easy", code: `Same Orders table.\n\nSELECT ID FROM Orders WHERE NOT Product = 'Pen';`, answer: "2, 3", explain: "NOT flips the condition, so you get every row where the product is not a Pen." },
+  { topic: "WHERE / AND / OR / NOT", difficulty: "medium", code: `Same Orders table.\n\nSELECT ID FROM Orders WHERE Price > 5 OR Product = 'Pen';`, answer: "1, 2, 3, 4", explain: "OR needs only one condition true. Pens (1, 4) match the second; Book and Bag (2, 3) match the first." },
+  { topic: "WHERE / AND / OR / NOT", difficulty: "hard", code: `Same Orders table.\n\nSELECT ID FROM Orders\nWHERE Product = 'Pen' OR Product = 'Book' AND Price > 10;`, answer: "1, 2, 4", explain: "AND binds tighter than OR, so this reads as: Pen OR (Book AND Price > 10). Both Pens match the first part, and the Book at 12 matches the second. Use brackets whenever you mix AND and OR." },
+
+  // ===== ORDER BY & TOP / LIMIT =====
+  { topic: "ORDER BY & TOP", difficulty: "easy", code: `Same Orders table (Pen 2, Book 12, Bag 30, Pen 3).\n\nSELECT Product FROM Orders ORDER BY Price DESC;`, answer: "Bag\nBook\nPen\nPen", explain: "DESC sorts largest first: 30, 12, 3, 2." },
+  { topic: "ORDER BY & TOP", difficulty: "medium", code: `Same Orders table.\n\nSELECT ID FROM Orders ORDER BY Product ASC, Price DESC;`, answer: "3, 2, 4, 1", explain: "Sorted by Product alphabetically first (Bag, Book, Pen, Pen). The two Pens tie, so Price DESC breaks the tie: 3 (ID 4) before 2 (ID 1)." },
+  { topic: "ORDER BY & TOP", difficulty: "medium", code: `SELECT TOP 2 * FROM Orders ORDER BY Price DESC;\n\nWhat does it return, and how do you write the same thing in MySQL/PostgreSQL?`, answer: "The two most expensive rows (Bag 30, Book 12).\nMySQL/PostgreSQL: SELECT * FROM Orders ORDER BY Price DESC LIMIT 2; (Oracle: FETCH FIRST 2 ROWS ONLY)", explain: "TOP is SQL Server/MS Access syntax. Without ORDER BY, 'top 2' just means 'any 2 rows', so always pair them." },
+  { topic: "ORDER BY & TOP", difficulty: "hard", code: `What's the default sort direction of ORDER BY, and is the row order guaranteed if you leave ORDER BY out?`, answer: "Default is ASC (ascending). Without ORDER BY the order is NOT guaranteed, even if it looks consistent.", explain: "Never rely on insertion order or primary key order appearing 'naturally' — the engine can return rows in whatever order is cheapest." },
+
+  // ===== NULL Values & Null Functions =====
+  { topic: "NULL Values", difficulty: "easy", code: `People\nName | Phone\nAnn  | 123\nBob  | NULL\nCat  | NULL\n\nSELECT Name FROM People WHERE Phone = NULL;`, answer: "No rows", explain: "NULL means 'unknown', and nothing equals unknown, not even NULL. You must use IS NULL." },
+  { topic: "NULL Values", difficulty: "medium", code: `Same People table.\n\nSELECT COUNT(*), COUNT(Phone) FROM People;`, answer: "3, 1", explain: "COUNT(*) counts rows. COUNT(column) counts only non-NULL values in that column." },
+  { topic: "NULL Values", difficulty: "medium", code: `SELECT 5 + NULL;\n\nWhat does it return?`, answer: "NULL", explain: "Any arithmetic with NULL gives NULL, because an unknown value makes the whole result unknown." },
+  { topic: "NULL Values", difficulty: "medium", code: `Which function replaces NULL with a fallback value in a way that works across all major databases, and what are the system-specific versions?`, answer: "COALESCE(value, fallback) is standard SQL. System-specific: ISNULL (SQL Server), IFNULL (MySQL), NVL (Oracle).", explain: "COALESCE also accepts more than two arguments and returns the first non-NULL one." },
+  { topic: "NULL Values", difficulty: "hard", code: `Customers IDs: 1, 2, 3\n\nSELECT Name FROM Customers WHERE ID NOT IN (1, NULL);\n\nWhat comes back?`, answer: "No rows", explain: "NOT IN (1, NULL) expands to ID <> 1 AND ID <> NULL. The second part is never true (it's unknown), so every row fails. NOT EXISTS doesn't have this trap." },
+
+  // ===== INSERT, UPDATE, DELETE =====
+  { topic: "INSERT / UPDATE / DELETE", difficulty: "easy", code: `UPDATE Customers SET Country = 'UK';\n\nWhat happens?`, answer: "Every row in the table gets Country = 'UK', because there is no WHERE clause.", explain: "A missing WHERE on UPDATE or DELETE is one of the classic disasters. Always write the WHERE first, or test with a SELECT using the same condition." },
+  { topic: "INSERT / UPDATE / DELETE", difficulty: "medium", code: `What's the difference between:\nDELETE FROM Customers;\nTRUNCATE TABLE Customers;\nDROP TABLE Customers;`, answer: "DELETE removes rows (can use WHERE, can be rolled back, logged row by row). TRUNCATE removes all rows quickly but keeps the table structure. DROP removes the table itself.", explain: "TRUNCATE usually resets auto-increment counters and can't take a WHERE; DROP removes the table definition, indexes and all." },
+  { topic: "INSERT / UPDATE / DELETE", difficulty: "medium", code: `Customers has columns (ID, Name, Country) and Country allows NULL.\n\nINSERT INTO Customers (ID, Name) VALUES (6, 'Zed');\n\nWhat is Zed's Country?`, answer: "NULL (or the column's DEFAULT value, if one is defined)", explain: "Columns you leave out of the column list get their default, or NULL if they allow it. If the column is NOT NULL with no default, the insert fails." },
+  { topic: "INSERT / UPDATE / DELETE", difficulty: "hard", code: `Customers has 3 columns (ID, Name, Country).\n\nINSERT INTO Customers VALUES (7, 'Yan');\n\nWhat happens?`, answer: "It errors — you gave 2 values for 3 columns.", explain: "If you omit the column list you must supply a value for every column in table order. Naming columns explicitly is safer and survives schema changes." },
+
+  // ===== Aggregate Functions =====
+  { topic: "Aggregate Functions", difficulty: "easy", code: `Orders prices: 2, 12, 30, 3\n\nSELECT SUM(Price), AVG(Price) FROM Orders;`, answer: "47, 11.75", explain: "SUM adds the prices: 2 + 12 + 30 + 3 = 47. AVG divides by the row count: 47 / 4 = 11.75." },
+  { topic: "Aggregate Functions", difficulty: "easy", code: `Same prices.\n\nSELECT MIN(Price), MAX(Price), COUNT(*) FROM Orders;`, answer: "2, 30, 4", explain: "MIN is the smallest value, MAX the largest, COUNT(*) the number of rows." },
+  { topic: "Aggregate Functions", difficulty: "medium", code: `Scores column values: 10, NULL, 20\n\nSELECT AVG(Score), COUNT(*), COUNT(Score), SUM(Score) FROM Scores;`, answer: "15, 3, 2, 30", explain: "Aggregates ignore NULLs, so AVG is 30 / 2 = 15, not 30 / 3. COUNT(*) still counts the NULL row; COUNT(Score) doesn't." },
+  { topic: "Aggregate Functions", difficulty: "hard", code: `SELECT Product, MAX(Price) FROM Orders;\n\nWhat happens in standard SQL (e.g. SQL Server, PostgreSQL)?`, answer: "It errors — Product isn't in a GROUP BY and isn't aggregated.", explain: "Mixing a plain column with an aggregate requires GROUP BY. Some older MySQL modes quietly allowed it and returned an arbitrary Product, which is a bug waiting to happen." },
+
+  // ===== LIKE, Wildcards, IN, BETWEEN =====
+  { topic: "LIKE / IN / BETWEEN", difficulty: "easy", code: `Names: Anna, Alan, Bob, Alex, Ben\n\nSELECT Name FROM Names WHERE Name LIKE 'A%';`, answer: "Anna, Alan, Alex", explain: "% matches any number of characters (including none), so 'A%' means 'starts with A'." },
+  { topic: "LIKE / IN / BETWEEN", difficulty: "medium", code: `Same names.\n\nSELECT Name FROM Names WHERE Name LIKE '_l%';`, answer: "Alan, Alex", explain: "_ matches exactly one character. So the pattern means: any first letter, then 'l', then anything. Anna and Ben don't have 'l' second." },
+  { topic: "LIKE / IN / BETWEEN", difficulty: "medium", code: `Same names.\n\nSELECT Name FROM Names WHERE Name LIKE '%n';`, answer: "Alan, Ben", explain: "'%n' means ends with n. Anna ends in 'a', Bob in 'b', Alex in 'x'." },
+  { topic: "LIKE / IN / BETWEEN", difficulty: "medium", code: `Numbers table n: 1, 2, 3, 4, 5, 6\n\nSELECT n FROM Numbers WHERE n BETWEEN 2 AND 4;`, answer: "2, 3, 4", explain: "BETWEEN is inclusive of both ends. NOT BETWEEN 2 AND 4 would give 1, 5, 6." },
+  { topic: "LIKE / IN / BETWEEN", difficulty: "medium", code: `Customers: Ann UK, Bob US, Cat UK, Dan US, Eve FR\n\nSELECT Name FROM Customers WHERE Country IN ('UK', 'FR');`, answer: "Ann, Cat, Eve", explain: "IN is shorthand for several OR conditions: Country = 'UK' OR Country = 'FR'." },
+  { topic: "LIKE / IN / BETWEEN", difficulty: "hard", code: `Is LIKE '%a%' case-sensitive?`, answer: "Depends on the database: MySQL and SQL Server are usually case-insensitive by default (collation); PostgreSQL's LIKE is case-sensitive (use ILIKE for case-insensitive).", explain: "Worth knowing in interviews, since the same query can behave differently when you move between systems." },
+
+  // ===== Aliases =====
+  { topic: "Aliases", difficulty: "easy", code: `SELECT Price * 2 AS DoublePrice FROM Orders;\n\nWhat does AS do, and is it required?`, answer: "It gives the column a temporary name in the result set. AS is optional in most databases.", explain: "Aliases only exist for the duration of the query and make calculated columns readable." },
+  { topic: "Aliases", difficulty: "medium", code: `SELECT Price * 2 AS DoublePrice FROM Orders WHERE DoublePrice > 20;\n\nWill this work?`, answer: "No — you can't use a column alias in WHERE.", explain: "WHERE is evaluated before SELECT, so the alias doesn't exist yet. Repeat the expression (Price * 2 > 20) or use a subquery. You can use the alias in ORDER BY." },
+  { topic: "Aliases", difficulty: "medium", code: `SELECT c.Name, o.OrderID\nFROM Customers AS c\nJOIN Orders AS o ON c.ID = o.CustomerID;\n\nWhy use table aliases here?`, answer: "They shorten the query and make it clear which table each column comes from, which is essential in self joins and when column names clash.", explain: "A table alias is required in a self join, since you're referring to the same table twice." },
+
+  // ===== Joins =====
+  { topic: "Joins", difficulty: "easy", code: `Customers: (ID, Name)  1 Ann, 2 Bob, 3 Cat\nOrders: (OrderID, CustomerID)  10 -> 1, 11 -> 1, 12 -> 3, 13 -> 4\n\nSELECT c.Name, o.OrderID\nFROM Customers c INNER JOIN Orders o ON c.ID = o.CustomerID;\n\nHow many rows?`, answer: "3 rows: Ann 10, Ann 11, Cat 12", explain: "INNER JOIN keeps only rows with a match on both sides. Bob has no orders, and order 13 has no customer 4, so both are dropped." },
+  { topic: "Joins", difficulty: "medium", code: `Same tables.\n\nSELECT c.Name, o.OrderID\nFROM Customers c LEFT JOIN Orders o ON c.ID = o.CustomerID;\n\nHow many rows, and what does Bob show?`, answer: "4 rows: Ann 10, Ann 11, Bob NULL, Cat 12", explain: "LEFT JOIN keeps every row from the left table. Where there's no match on the right, those columns are NULL." },
+  { topic: "Joins", difficulty: "medium", code: `Same tables.\n\nSELECT c.Name, o.OrderID\nFROM Customers c RIGHT JOIN Orders o ON c.ID = o.CustomerID;\n\nHow many rows, and what does order 13 show?`, answer: "4 rows: Ann 10, Ann 11, Cat 12, NULL 13", explain: "RIGHT JOIN keeps every row from the right table (Orders). Order 13 has no matching customer, so Name is NULL." },
+  { topic: "Joins", difficulty: "medium", code: `Same tables.\n\nSELECT c.Name, o.OrderID\nFROM Customers c FULL OUTER JOIN Orders o ON c.ID = o.CustomerID;\n\nHow many rows?`, answer: "5 rows: Ann 10, Ann 11, Bob NULL, Cat 12, NULL 13", explain: "FULL JOIN keeps everything from both sides, filling NULLs wherever there's no match. MySQL doesn't support it directly (use LEFT JOIN UNION RIGHT JOIN)." },
+  { topic: "Joins", difficulty: "hard", code: `Same tables.\n\nSELECT c.Name, o.OrderID\nFROM Customers c LEFT JOIN Orders o ON c.ID = o.CustomerID\nWHERE o.OrderID > 10;\n\nWhat comes back, and why isn't Bob there?`, answer: "Ann 11, Cat 12 (2 rows). Bob's OrderID is NULL, and NULL > 10 is not true, so the WHERE removes him.", explain: "Filtering on the right table in WHERE turns a LEFT JOIN into an effective INNER JOIN. To keep unmatched rows, put the condition in the ON clause instead." },
+  { topic: "Joins", difficulty: "hard", code: `Employees: (ID, Name, ManagerID)\n1 Sam NULL | 2 Tia 1 | 3 Raj 1 | 4 Uma 2\n\nSELECT e.Name, m.Name AS Manager\nFROM Employees e JOIN Employees m ON e.ManagerID = m.ID;\n\nWhat comes back?`, answer: "Tia - Sam, Raj - Sam, Uma - Tia (3 rows)", explain: "A self join joins a table to itself using two aliases. Sam has no manager (NULL), so the inner join drops him; use LEFT JOIN to keep him." },
+  { topic: "Joins", difficulty: "hard", code: `Customers has 3 rows, Orders has 4 rows.\n\nSELECT * FROM Customers, Orders;\n\nHow many rows, and why?`, answer: "12 rows (3 x 4) — a Cartesian product.", explain: "With no join condition, every customer row pairs with every order row. Accidentally forgetting the ON/WHERE is a common cause of huge, wrong result sets." },
+
+  // ===== UNION =====
+  { topic: "UNION", difficulty: "easy", code: `A has values: 1, 2, 2\nB has values: 2, 3\n\nSELECT n FROM A UNION SELECT n FROM B;\n\nHow many rows?`, answer: "3 rows: 1, 2, 3", explain: "UNION removes duplicates across the combined result." },
+  { topic: "UNION", difficulty: "medium", code: `Same A and B.\n\nSELECT n FROM A UNION ALL SELECT n FROM B;\n\nHow many rows?`, answer: "5 rows: 1, 2, 2, 2, 3", explain: "UNION ALL keeps every row, duplicates included. It's also faster, since the engine skips the duplicate-removal step." },
+  { topic: "UNION", difficulty: "hard", code: `What rules must the SELECT statements in a UNION follow, and which query decides the column names?`, answer: "Same number of columns, compatible data types in matching positions, and the same column order. Column names come from the first SELECT.", explain: "Use UNION ALL when you know there are no duplicates, or you want to keep them." },
+
+  // ===== GROUP BY & HAVING =====
+  { topic: "GROUP BY & HAVING", difficulty: "easy", code: `Sales\nProduct | Qty\nPen     | 2\nPen     | 3\nBook    | 1\nBook    | 4\nBag     | 7\n\nSELECT Product, SUM(Qty) FROM Sales GROUP BY Product;`, answer: "Pen 5\nBook 5\nBag 7", explain: "GROUP BY collapses rows with the same Product into one, then SUM runs inside each group." },
+  { topic: "GROUP BY & HAVING", difficulty: "medium", code: `Same Sales table.\n\nSELECT Product, SUM(Qty) FROM Sales\nGROUP BY Product HAVING SUM(Qty) > 5;`, answer: "Bag 7", explain: "HAVING filters groups after aggregation. Pen and Book total exactly 5, which isn't greater than 5." },
+  { topic: "GROUP BY & HAVING", difficulty: "hard", code: `Same Sales table.\n\nSELECT Product, SUM(Qty) FROM Sales\nWHERE Qty > 1\nGROUP BY Product HAVING SUM(Qty) >= 5;`, answer: "Pen 5\nBag 7", explain: "WHERE runs first and removes the Book row with Qty 1, so Book's group becomes 4 and fails HAVING. Without the WHERE it would have passed at 5." },
+  { topic: "GROUP BY & HAVING", difficulty: "medium", code: `What's the difference between WHERE and HAVING?`, answer: "WHERE filters individual rows before grouping. HAVING filters groups after aggregation, so only HAVING can use aggregate functions like SUM or COUNT.", explain: "Order of execution: FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY." },
+  { topic: "GROUP BY & HAVING", difficulty: "medium", code: `Same Sales table.\n\nSELECT COUNT(*) FROM Sales GROUP BY Product;\n\nWhat comes back?`, answer: "3 rows with the counts 2, 2, 1 (Pen, Book, Bag).", explain: "With GROUP BY, COUNT(*) is computed per group, so you get one row per product instead of a single total." },
+
+  // ===== EXISTS, ANY, ALL =====
+  { topic: "EXISTS / ANY / ALL", difficulty: "easy", code: `SELECT Name FROM Customers c\nWHERE EXISTS (SELECT 1 FROM Orders o WHERE o.CustomerID = c.ID);\n\nWhat does EXISTS check?`, answer: "Whether the subquery returns at least one row. If it does, the outer row is kept.", explain: "The values the subquery selects don't matter, only whether any row comes back. Here it finds customers who have placed an order." },
+  { topic: "EXISTS / ANY / ALL", difficulty: "medium", code: `Prices in a subquery: 5, 10, 20\n\nWHERE Price > ANY (subquery)\nWHERE Price > ALL (subquery)\n\nWhat must Price be for each to be true?`, answer: "> ANY: greater than at least one value, so Price > 5.\n> ALL: greater than every value, so Price > 20.", explain: "Think of ANY as 'beats the smallest' and ALL as 'beats the largest' when using >." },
+  { topic: "EXISTS / ANY / ALL", difficulty: "medium", code: `What is = ANY (subquery) equivalent to?`, answer: "IN (subquery)", explain: "Both mean 'equals at least one of the returned values'." },
+  { topic: "EXISTS / ANY / ALL", difficulty: "hard", code: `Why is NOT EXISTS usually safer than NOT IN with a subquery?`, answer: "If the NOT IN subquery returns any NULL, the whole condition becomes unknown and matches no rows. NOT EXISTS isn't affected by NULLs.", explain: "This ties back to the NULL trap: x NOT IN (1, NULL) can never be true." },
+
+  // ===== SELECT INTO / INSERT INTO SELECT =====
+  { topic: "SELECT INTO / INSERT SELECT", difficulty: "medium", code: `SELECT * INTO CustomersBackup FROM Customers;\n\nWhat does it do, and what if CustomersBackup already exists?`, answer: "It creates a new table CustomersBackup and copies the data in. If the table already exists, it errors.", explain: "This is SQL Server syntax. MySQL and PostgreSQL use CREATE TABLE new_table AS SELECT ..." },
+  { topic: "SELECT INTO / INSERT SELECT", difficulty: "medium", code: `INSERT INTO CustomersBackup (Name, Country)\nSELECT Name, Country FROM Customers WHERE Country = 'UK';\n\nWhat's different from SELECT INTO?`, answer: "INSERT INTO SELECT copies rows into a table that already exists, and the data types of the columns must match.", explain: "Existing rows in the target table are left alone; the selected rows are simply added." },
+  { topic: "SELECT INTO / INSERT SELECT", difficulty: "hard", code: `How would you copy just the structure of a table with no rows, using SELECT INTO?`, answer: "SELECT * INTO NewTable FROM Customers WHERE 1 = 0;", explain: "The condition is never true, so no rows are copied, but the columns and types are created." },
+
+  // ===== CASE =====
+  { topic: "CASE", difficulty: "easy", code: `Prices: 2, 12, 30, 3\n\nSELECT CASE\n  WHEN Price > 10 THEN 'High'\n  WHEN Price > 2 THEN 'Mid'\n  ELSE 'Low'\nEND FROM Orders;`, answer: "Low\nHigh\nHigh\nMid", explain: "CASE checks conditions top to bottom. 2 fails both, so ELSE gives Low. 12 and 30 hit the first. 3 fails the first but passes > 2." },
+  { topic: "CASE", difficulty: "medium", code: `What does CASE return when no WHEN matches and there's no ELSE?`, answer: "NULL", explain: "Always add an ELSE if you don't want surprise NULLs." },
+  { topic: "CASE", difficulty: "hard", code: `x = 20\n\nCASE WHEN x > 5 THEN 'A' WHEN x > 10 THEN 'B' END\n\nWhat does it return?`, answer: "A", explain: "CASE stops at the first true condition. 20 > 5 is true, so it never reaches the second WHEN. Order your conditions from most to least specific." },
+  { topic: "CASE", difficulty: "hard", code: `How could you count only orders over 10 and orders 10 or under, side by side in one row, without GROUP BY?`, answer: "SELECT SUM(CASE WHEN Price > 10 THEN 1 ELSE 0 END) AS Big,\n       SUM(CASE WHEN Price <= 10 THEN 1 ELSE 0 END) AS Small\nFROM Orders;", explain: "Conditional aggregation: CASE turns each row into 1 or 0, and SUM adds them up. It's a very common pattern for pivot-style reports." },
+
+  // ===== Stored Procedures =====
+  { topic: "Stored Procedures", difficulty: "easy", code: `What is a stored procedure?`, answer: "Saved, reusable SQL code stored in the database that you can run by name, optionally with parameters.", explain: "Instead of resending the same query text, you call it and the database runs the saved version." },
+  { topic: "Stored Procedures", difficulty: "medium", code: `CREATE PROCEDURE SelectCustomers @Country nvarchar(30)\nAS\nSELECT * FROM Customers WHERE Country = @Country\nGO;\n\nHow do you run it for the UK?`, answer: "EXEC SelectCustomers @Country = 'UK';", explain: "That's SQL Server syntax. MySQL uses CALL procedure_name('UK')." },
+  { topic: "Stored Procedures", difficulty: "hard", code: `Give three benefits of stored procedures.`, answer: "Reuse (write once, call many times), less network traffic (send a name, not a long query), and security (grant EXECUTE on the procedure without direct table access). Also easier maintenance in one place.", explain: "They also help against SQL injection when parameters are used properly." },
+
+  // ===== Database & Table Management =====
+  { topic: "Create / Drop / Alter", difficulty: "easy", code: `CREATE DATABASE testDB;\nDROP DATABASE testDB;\n\nWhat does each do?`, answer: "CREATE DATABASE makes a new database. DROP DATABASE deletes it permanently, along with all its tables and data.", explain: "Be careful with DROP — there's no undo unless you have a backup." },
+  { topic: "Create / Drop / Alter", difficulty: "medium", code: `CREATE TABLE Persons (\n  PersonID int,\n  LastName varchar(255),\n  City varchar(255)\n);\n\nWhat does this create, and how many rows does it have?`, answer: "An empty table with three columns. It has 0 rows.", explain: "CREATE TABLE defines the structure only; you add data with INSERT." },
+  { topic: "Create / Drop / Alter", difficulty: "medium", code: `What do these do?\nALTER TABLE Persons ADD Email varchar(255);\nALTER TABLE Persons DROP COLUMN Email;`, answer: "The first adds a new column called Email. The second removes it (and its data).", explain: "Changing a column's type uses ALTER COLUMN in SQL Server and MODIFY COLUMN in MySQL." },
+  { topic: "Create / Drop / Alter", difficulty: "hard", code: `What's the difference between a full backup and a DIFFERENTIAL backup in SQL Server?`, answer: "A full backup copies the entire database. A differential backup copies only the parts that changed since the last full backup.", explain: "Differentials are faster and smaller, but restoring needs the last full backup plus the latest differential." },
+  { topic: "Create / Drop / Alter", difficulty: "hard", code: `What's the difference between DROP TABLE and TRUNCATE TABLE?`, answer: "DROP TABLE deletes the whole table, structure included. TRUNCATE TABLE removes all rows but keeps the empty table and its structure.", explain: "TRUNCATE is much faster than DELETE for emptying a big table, but it can't use WHERE." },
+
+  // ===== Constraints =====
+  { topic: "Constraints", difficulty: "easy", code: `What do NOT NULL and UNIQUE each enforce?`, answer: "NOT NULL: the column can never hold a NULL. UNIQUE: no two rows can have the same value in that column.", explain: "UNIQUE allows NULLs in most systems (SQL Server allows only one), whereas a PRIMARY KEY can't be NULL." },
+  { topic: "Constraints", difficulty: "medium", code: `What is a PRIMARY KEY, and how many can a table have?`, answer: "A column (or combination of columns) that uniquely identifies each row. It's NOT NULL + UNIQUE. A table can have only one primary key, but it can span multiple columns (a composite key).", explain: "A table can have many UNIQUE constraints but only one primary key." },
+  { topic: "Constraints", difficulty: "medium", code: `Orders.CustomerID is a FOREIGN KEY referencing Customers.ID.\n\nINSERT INTO Orders (OrderID, CustomerID) VALUES (20, 99);\n\nCustomers has no ID 99. What happens?`, answer: "The insert fails with a foreign key violation.", explain: "A foreign key makes sure every value points at a real row in the parent table. It also blocks deleting a customer who still has orders, unless you use ON DELETE CASCADE." },
+  { topic: "Constraints", difficulty: "medium", code: `CREATE TABLE Persons (Age int CHECK (Age >= 18));\n\nINSERT INTO Persons (Age) VALUES (17);\n\nWhat happens?`, answer: "The insert is rejected because 17 violates the CHECK constraint.", explain: "CHECK enforces a rule on the values allowed in a column." },
+  { topic: "Constraints", difficulty: "easy", code: `City varchar(255) DEFAULT 'London'\n\nINSERT INTO Persons (LastName) VALUES ('Smith');\n\nWhat's Smith's City?`, answer: "London", explain: "DEFAULT supplies a value whenever you don't give one." },
+
+  // ===== Indexes & Auto Increment =====
+  { topic: "Index & Auto Increment", difficulty: "easy", code: `What is the main benefit of an index, and what's the cost?`, answer: "Benefit: much faster SELECT queries (lookups, joins, sorting). Cost: slower INSERT/UPDATE/DELETE and extra storage, since the index has to be maintained.", explain: "Index the columns you filter, join, or sort on often — not every column." },
+  { topic: "Index & Auto Increment", difficulty: "medium", code: `CREATE UNIQUE INDEX idx_email ON Persons (Email);\n\nWhat does UNIQUE add compared with a normal index?`, answer: "It stops duplicate values being inserted into that column.", explain: "A plain index only speeds up lookups; a unique index also enforces uniqueness." },
+  { topic: "Index & Auto Increment", difficulty: "medium", code: `How do you declare an auto-incrementing id in MySQL, SQL Server, and PostgreSQL?`, answer: "MySQL: AUTO_INCREMENT. SQL Server: IDENTITY(1,1). PostgreSQL: SERIAL (or GENERATED ... AS IDENTITY).", explain: "Another example of dialect differences: same idea, different syntax." },
+  { topic: "Index & Auto Increment", difficulty: "hard", code: `A table has auto-increment IDs 1, 2, 3. You DELETE the row with ID 3, then insert a new row.\n\nWhat ID does the new row typically get?`, answer: "4 (the counter keeps going; deleted IDs are normally not reused)", explain: "Auto-increment only guarantees unique, increasing values, not gap-free ones. TRUNCATE usually resets it." },
+
+  // ===== Dates =====
+  { topic: "Dates", difficulty: "easy", code: `What's the standard SQL date format?`, answer: "YYYY-MM-DD, for example '2026-10-21'.", explain: "Using the standard format avoids ambiguity between day-first and month-first dates." },
+  { topic: "Dates", difficulty: "medium", code: `How do you get the current date/time in SQL Server vs MySQL/PostgreSQL?`, answer: "SQL Server: GETDATE(). MySQL/PostgreSQL: NOW() (MySQL also has CURDATE() for just the date).", explain: "Another dialect difference worth remembering." },
+  { topic: "Dates", difficulty: "hard", code: `OrderDate is a DATETIME column.\n\nSELECT * FROM Orders WHERE OrderDate = '2026-10-21';\n\nWhy might this miss orders placed on that day?`, answer: "The date is treated as 2026-10-21 00:00:00, so only orders placed exactly at midnight match.", explain: "Use a range instead: OrderDate >= '2026-10-21' AND OrderDate < '2026-10-22', or compare against the date part only." },
+  { topic: "Dates", difficulty: "medium", code: `Name the four main date/time data types in SQL Server.`, answer: "DATE (YYYY-MM-DD), DATETIME (YYYY-MM-DD hh:mm:ss), SMALLDATETIME (lower precision), and TIMESTAMP (a unique row version number, not a real date).", explain: "MySQL's equivalents are DATE, DATETIME, TIMESTAMP and YEAR." },
+
+  // ===== Views =====
+  { topic: "Views", difficulty: "easy", code: `CREATE VIEW UKCustomers AS\nSELECT Name FROM Customers WHERE Country = 'UK';\n\nWhat is a view?`, answer: "A virtual table defined by a saved query. It doesn't store its own data (unless materialized); it runs the query when you select from it.", explain: "Views simplify complex queries and let you expose only certain columns or rows to users." },
+  { topic: "Views", difficulty: "medium", code: `You add a new UK customer to the Customers table.\n\nSELECT * FROM UKCustomers;\n\nDoes the new customer appear?`, answer: "Yes — the view always reflects the current data in the underlying table.", explain: "Since the view is just a stored query, it's never out of date." },
+  { topic: "Views", difficulty: "medium", code: `How do you change or remove a view?`, answer: "CREATE OR REPLACE VIEW to update its definition (SQL Server uses ALTER VIEW), and DROP VIEW to remove it.", explain: "Dropping a view doesn't touch the underlying data." },
+  { topic: "Views", difficulty: "hard", code: `Can you INSERT or UPDATE through a view?`, answer: "Sometimes — only for simple views on a single table. Views with joins, aggregates, DISTINCT or GROUP BY generally can't be updated.", explain: "The database must be able to map each view row back to exactly one underlying row." },
+
+  // ===== SQL Injection & Prepared Statements =====
+  { topic: "Injection & Parameters", difficulty: "easy", code: `What is SQL injection?`, answer: "An attack where malicious SQL is inserted through user input and executed by the database.", explain: "It happens when user input is concatenated straight into a query string." },
+  { topic: "Injection & Parameters", difficulty: "medium", code: `query = "SELECT * FROM Users WHERE name = '" + input + "'"\n\nThe user enters:  ' OR '1'='1\n\nWhat query runs, and what's the result?`, answer: "SELECT * FROM Users WHERE name = '' OR '1'='1'\nThe condition is always true, so every user row is returned.", explain: "The input closed the string early and added its own condition. That's the classic injection pattern." },
+  { topic: "Injection & Parameters", difficulty: "medium", code: `What's the best defence against SQL injection?`, answer: "Parameterized queries (prepared statements), where user input is passed as values separate from the query text.", explain: "Extras: least-privilege database accounts and input validation, but parameters are the main fix." },
+  { topic: "Injection & Parameters", difficulty: "hard", code: `Why do prepared statements stop injection, when escaping quotes by hand often doesn't?`, answer: "The query structure is compiled first and the parameters are bound afterwards as pure data, so input can never be interpreted as SQL code.", explain: "Manual escaping is easy to get wrong across encodings and edge cases, whereas separating code from data removes the whole problem." },
+  { topic: "Injection & Parameters", difficulty: "hard", code: `Name three ways to reduce the damage if an injection does get through.`, answer: "Use a database account with minimal privileges (no DROP, no access to other schemas), don't show raw database errors to users, and keep backups and monitoring so you can detect and recover.", explain: "Defence in depth: assume one layer can fail." },
+];
+
+const TOPIC_ORDER = [...new Set(QUESTIONS.map(q => q.topic))];
+const STORAGE_KEY = "sql_drill_progress_v1";
+const TIMER_SECONDS = 90;
+const READY_ACCURACY = 85;
+const READY_MIN_QUESTIONS = 40;
+const READY_MIN_PER_TOPIC = 4;
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function defaultDay() {
+  return { score: 0, answered: 0, correct: 0, streak: 0 };
+}
+
+function defaultState() {
+  return {
+    lifetimeScore: 0,
+    bestStreak: 0,
+    totalAnswered: 0,
+    totalCorrect: 0,
+    topicStats: {},
+    badges: [],
+    days: {},
+    readyNotified: false,
+    seenByTopic: {}
+  };
+}
+
+let state = defaultState();
+let current = null;
+let phase = "idle";
+let timeLeft = TIMER_SECONDS;
+let timerHandle = null;
+let flash = null;
+
+function ensureToday() {
+  const key = todayKey();
+  if (!state.days[key]) state.days[key] = defaultDay();
+  return state.days[key];
+}
+
+async function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) { console.error("save failed", e); }
+}
+
+async function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) state = JSON.parse(raw);
+  } catch (e) { /* nothing saved yet */ }
+  if (!state.seenByTopic) state.seenByTopic = {};
+  ensureToday();
+  render();
+}
+
+function pickQuestion() {
+  const topicWeight = {};
+  TOPIC_ORDER.forEach(topic => {
+    const s = state.topicStats[topic];
+    const attempts = s ? s.attempts : 0;
+    const acc = s && attempts > 0 ? s.correct / attempts : 0.5;
+    if (attempts < READY_MIN_PER_TOPIC) topicWeight[topic] = 4;
+    else if (acc < 0.6) topicWeight[topic] = 3;
+    else if (acc < 0.85) topicWeight[topic] = 2;
+    else topicWeight[topic] = 1;
+  });
+
+  const weightedTopics = [];
+  TOPIC_ORDER.forEach(topic => {
+    for (let i = 0; i < topicWeight[topic]; i++) weightedTopics.push(topic);
+  });
+  const chosenTopic = weightedTopics[Math.floor(Math.random() * weightedTopics.length)];
+
+  const topicQuestions = QUESTIONS
+    .map((q, idx) => ({ ...q, idx }))
+    .filter(q => q.topic === chosenTopic);
+
+  if (!state.seenByTopic) state.seenByTopic = {};
+  let seen = state.seenByTopic[chosenTopic] || [];
+  let unseen = topicQuestions.filter(q => !seen.includes(q.idx));
+
+  if (unseen.length === 0) {
+    seen = [];
+    unseen = topicQuestions;
+  }
+
+  const picked = unseen[Math.floor(Math.random() * unseen.length)];
+  state.seenByTopic[chosenTopic] = [...seen, picked.idx];
+
+  return { ...picked };
+}
+
+function startQuestion() {
+  current = pickQuestion();
+  phase = "answering";
+  timeLeft = TIMER_SECONDS;
+  flash = null;
+  clearTimeout(timerHandle);
+  tick();
+  render();
+}
+
+function tick() {
+  timerHandle = setTimeout(() => {
+    if (phase !== "answering") return;
+    timeLeft -= 1;
+    if (timeLeft <= 0) {
+      phase = "revealed";
+      render();
+      return;
+    }
+    render();
+    tick();
+  }, 1000);
+}
+
+function revealAnswer() {
+  clearTimeout(timerHandle);
+  phase = "revealed";
+  render();
+}
+
+function grade(correct) {
+  const today = ensureToday();
+  const topic = current.topic;
+  const ts = state.topicStats[topic] || { attempts: 0, correct: 0 };
+  state.topicStats[topic] = { attempts: ts.attempts + 1, correct: ts.correct + (correct ? 1 : 0) };
+
+  today.streak = correct ? today.streak + 1 : 0;
+  state.bestStreak = Math.max(state.bestStreak, today.streak);
+  today.answered += 1;
+  today.correct += correct ? 1 : 0;
+  state.totalAnswered += 1;
+  state.totalCorrect += correct ? 1 : 0;
+
+  const earned = correct ? 10 : 0;
+  today.score += earned;
+  state.lifetimeScore += earned;
+
+  if (today.streak === 5 && !state.badges.includes("Query Dodger")) state.badges.push("Query Dodger");
+  if (today.streak === 10 && !state.badges.includes("No Mercy")) state.badges.push("No Mercy");
+
+  flash = correct ? `+${earned}` : "+0";
+  phase = "graded";
+
+  const justBecameReady = isReady() && !state.readyNotified;
+  if (justBecameReady) state.readyNotified = true;
+
+  saveState();
+  render();
+
+  if (justBecameReady) {
+    setTimeout(() => {
+      alert(`🎉 Every topic is at ${READY_ACCURACY}%+ with at least ${READY_MIN_PER_TOPIC} reps, and your overall accuracy is ${Math.round(overallAccuracy())}% across ${state.totalAnswered} questions.`);
+    }, 100);
+  }
+}
+
+async function resetToday() {
+  state.days[todayKey()] = defaultDay();
+  current = null;
+  phase = "idle";
+  await saveState();
+  render();
+}
+
+function masteryFor(topic) {
+  const s = state.topicStats[topic];
+  if (!s || s.attempts === 0) return { label: "Not started", pct: 0, color: "#94a3b8" };
+  const pct = s.correct / s.attempts;
+  if (pct < 0.6) return { label: "Shaky", pct, color: "#ef4444" };
+  if (pct < 0.85) return { label: "Getting there", pct, color: "#eab308" };
+  return { label: "Locked in", pct, color: "#22c55e" };
+}
+
+function overallAccuracy() {
+  return state.totalAnswered > 0 ? (state.totalCorrect / state.totalAnswered) * 100 : 0;
+}
+
+function topicsBelowBar() {
+  return TOPIC_ORDER.filter(t => {
+    const s = state.topicStats[t];
+    if (!s || s.attempts < READY_MIN_PER_TOPIC) return true;
+    return (s.correct / s.attempts) * 100 < READY_ACCURACY;
+  });
+}
+
+function isReady() {
+  const overallOk = state.totalAnswered >= READY_MIN_QUESTIONS && overallAccuracy() >= READY_ACCURACY;
+  return overallOk && topicsBelowBar().length === 0;
+}
+
+function weakestTopics() {
+  return topicsBelowBar();
+}
+
+function esc(str) {
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function render() {
+  const app = document.getElementById("app");
+  const today = ensureToday();
+  const lifetimeAccuracy = state.totalAnswered > 0 ? Math.round((state.totalCorrect / state.totalAnswered) * 100) : 0;
+  const todayAccuracy = today.answered > 0 ? Math.round((today.correct / today.answered) * 100) : 0;
+
+  let questionHtml = "";
+  if (phase === "idle") {
+    questionHtml = `
+      <div style="text-align:center; padding:20px 0;">
+        <div style="font-size:16px; margin-bottom:16px; opacity:0.75;">Ready for a timed SQL drill? 90 seconds, no hints until reveal.</div>
+        <button id="startBtn" style="border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;background:#2563eb;color:white;">Start Drill</button>
+      </div>`;
+  } else if (current) {
+    questionHtml = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span>
+          <span style="font-size:13px;font-weight:600;color:#cbd5e1;background:#334155;padding:3px 10px;border-radius:999px;">${esc(current.topic)}</span>
+          ${current.difficulty ? `<span style="font-size:12px;font-weight:600;color:${current.difficulty === "easy" ? "#86efac" : current.difficulty === "hard" ? "#fca5a5" : "#fde68a"};margin-left:6px;">${esc(current.difficulty)}</span>` : ""}
+        </span>
+        ${phase === "answering" ? `<span style="font-size:18px;font-weight:700;color:${timeLeft <= 15 ? "#ef4444" : "#94a3b8"};">${timeLeft}s</span>` : ""}
+      </div>
+      <pre style="background:#020617;color:#e2e8f0;padding:16px;border-radius:8px;overflow-x:auto;font-size:14px;line-height:1.5;border:1px solid #1e293b;white-space:pre-wrap;">${esc(current.code)}</pre>
+      ${phase === "answering" ? `
+        <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">
+          <button id="revealBtn" style="border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;background:#2563eb;color:white;">Reveal answer</button>
+        </div>
+        <div style="margin-top:8px;font-size:12px;opacity:0.5;">Work it out first, then reveal and grade yourself honestly.</div>` : ""}
+      ${(phase === "revealed" || phase === "graded") ? `
+        <div style="margin-top:16px;">
+          <div style="font-size:13px;font-weight:600;opacity:0.6;margin-bottom:4px;">ANSWER</div>
+          <pre style="background:#052e1c;border:1px solid #166534;color:#bbf7d0;padding:12px;border-radius:8px;font-size:14px;white-space:pre-wrap;">${esc(current.answer)}</pre>
+          <div style="font-size:13px;font-weight:600;opacity:0.6;margin-top:12px;margin-bottom:4px;">WHY</div>
+          <div style="font-size:14px;line-height:1.5;opacity:0.85;color:#cbd5e1;">${esc(current.explain)}</div>
+        </div>` : ""}
+      ${phase === "revealed" ? `
+        <div style="margin-top:16px;">
+          <div style="font-size:13px;font-weight:600;opacity:0.7;margin-bottom:8px;">Did you actually get it right?</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button id="markRightBtn" style="border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;background:#22c55e;color:white;">✓ I got it right</button>
+            <button id="markWrongBtn" style="border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;background:#ef4444;color:white;">✗ I got it wrong</button>
+          </div>
+        </div>` : ""}
+      ${phase === "graded" ? `
+        <div style="margin-top:16px;">
+          ${flash ? `<div style="font-size:22px;font-weight:700;color:${flash === "+0" ? "#94a3b8" : "#22c55e"};margin-bottom:8px;">${flash}</div>` : ""}
+          <button id="nextBtn" style="border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;background:#2563eb;color:white;">Next Question</button>
+        </div>` : ""}
+    `;
+  }
+
+  const badgesHtml = state.badges.length > 0 ? `
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+      ${state.badges.map(b => `<span style="background:#422006;color:#fcd34d;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:600;">🏅 ${esc(b)}</span>`).join("")}
+    </div>` : "";
+
+  const ready = isReady();
+  const overallAcc = Math.round(overallAccuracy());
+  const weak = weakestTopics();
+  const readyBannerHtml = ready ? `
+    <div style="background:#052e1c;border:1px solid #166534;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+      <div style="font-size:15px;font-weight:700;color:#86efac;">🎉 ${overallAcc}% overall, every topic covered at ${READY_ACCURACY}%+</div>
+      <div style="font-size:13px;color:#86efac;opacity:0.85;margin-top:2px;">Solid SQL foundation. No topic left behind.</div>
+    </div>` : `
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px 20px;margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;color:#94a3b8;">
+        <span>Goal: ${READY_ACCURACY}% overall (min ${READY_MIN_QUESTIONS}q) AND every topic ${READY_ACCURACY}%+ with ${READY_MIN_PER_TOPIC}+ reps</span>
+        <span>${overallAcc}% overall</span>
+      </div>
+      <div style="height:6px;background:#334155;border-radius:999px;overflow:hidden;margin-top:8px;">
+        <div style="height:100%;width:${Math.min(100, (overallAcc / READY_ACCURACY) * 100)}%;background:#3b82f6;transition:width 0.3s;"></div>
+      </div>
+      ${weak.length > 0 ? `<div style="font-size:12px;color:#94a3b8;margin-top:8px;">Still below the bar: ${weak.map(esc).join(", ")}</div>` : `<div style="font-size:12px;color:#94a3b8;margin-top:8px;">All topics clear — just need ${Math.max(0, READY_MIN_QUESTIONS - state.totalAnswered)} more questions overall.</div>`}
+    </div>`;
+
+  const masteryHtml = TOPIC_ORDER.map(topic => {
+    const m = masteryFor(topic);
+    const s = state.topicStats[topic];
+    const qCount = QUESTIONS.filter(q => q.topic === topic).length;
+    return `
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;">
+          <span>${esc(topic)} <span style="opacity:0.4;font-size:11px;">(${qCount}q)</span></span>
+          <span style="color:${m.color};font-weight:600;">${m.label}${s ? ` (${s.correct}/${s.attempts})` : ""}</span>
+        </div>
+        <div style="height:6px;background:#334155;border-radius:999px;overflow:hidden;">
+          <div style="height:100%;width:${m.pct * 100}%;background:${m.color};transition:width 0.3s;"></div>
+        </div>
+      </div>`;
+  }).join("");
+
+  app.innerHTML = `
+    <div style="margin-bottom:20px;">
+      <div style="font-size:13px;opacity:0.6;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">SQL Drill Game <span style="opacity:0.5;font-weight:400;">· ${QUESTIONS.length} questions, ${TOPIC_ORDER.length} topics</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:16px;">
+        <div>
+          <div style="font-size:11px;opacity:0.5;text-transform:uppercase;">Today</div>
+          <div style="font-size:26px;font-weight:700;">${today.score} pts</div>
+          <div style="font-size:12px;opacity:0.6;">${today.correct}/${today.answered} correct · ${todayAccuracy}% · streak ${today.streak}🔥</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:11px;opacity:0.5;text-transform:uppercase;">All-time</div>
+          <div style="font-size:18px;font-weight:700;">${state.lifetimeScore} pts</div>
+          <div style="font-size:12px;opacity:0.6;">${state.totalCorrect}/${state.totalAnswered} · ${lifetimeAccuracy}% · best streak ${state.bestStreak}</div>
+        </div>
+      </div>
+    </div>
+    ${badgesHtml}
+    ${readyBannerHtml}
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px;margin-bottom:20px;">
+      ${questionHtml}
+    </div>
+    <div style="margin-bottom:12px;font-size:14px;font-weight:700;opacity:0.7;color:#e2e8f0;">TOPIC MASTERY (all-time)</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px;color:#e2e8f0;">
+      ${masteryHtml}
+    </div>
+    <button id="resetTodayBtn" style="border:none;border-radius:8px;padding:10px 18px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:#94a3b8;border:1px solid #475569;opacity:0.8;">Reset today's session (keeps all-time stats &amp; mastery)</button>
+  `;
+
+  const startBtn = document.getElementById("startBtn");
+  if (startBtn) startBtn.onclick = startQuestion;
+  const revealBtn = document.getElementById("revealBtn");
+  if (revealBtn) revealBtn.onclick = revealAnswer;
+  const markRightBtn = document.getElementById("markRightBtn");
+  if (markRightBtn) markRightBtn.onclick = () => grade(true);
+  const markWrongBtn = document.getElementById("markWrongBtn");
+  if (markWrongBtn) markWrongBtn.onclick = () => grade(false);
+  const nextBtn = document.getElementById("nextBtn");
+  if (nextBtn) nextBtn.onclick = startQuestion;
+  const resetTodayBtn = document.getElementById("resetTodayBtn");
+  if (resetTodayBtn) resetTodayBtn.onclick = resetToday;
+}
+
+loadState();
+</script>
